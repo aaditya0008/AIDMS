@@ -21,6 +21,18 @@ class ActivityLogDB(Base):
     document_id = Column(String)
     timestamp = Column(DateTime)
 
+# ✅ DocumentDB Model
+class DocumentDB(Base):
+    __tablename__ = "documents"
+    document_id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+
+# ✅ UserDB Model
+class UserDB(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, nullable=False)
+
 # ✅ Dependency to Get DB Session
 def get_db():
     db = SessionLocal()

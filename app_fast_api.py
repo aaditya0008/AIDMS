@@ -14,9 +14,11 @@ from utility.documents import (
 )
 from utility.auth import register_user, verify_otp, login_user, get_current_user
 from utility.view import fetch_all_documents
-from utility.logs import fetch_logs, add_log_to_db, fetch_all_logs, ActivityLog
+from utility.logs import fetch_all_logs, ActivityLog, document_logs, user_logs, fetch_logs, add_log_to_db
 from utility.comments import add_comment
 from typing import List, Literal
+from typing import Optional
+
 
 from utility.summarize_text import summarize_text,extract_text
 from utility.translate_text import translate_text, process_text_input
@@ -77,30 +79,32 @@ def edit_metadata_endpoint(document_id: str, metadata: DocumentMetadata, db: Ses
 def delete_endpoint(document_id: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return delete_document(document_id, db)
 
-# ✅ Fetch All Documents API
-@app.get("/documents")
+# ✅ View All Documents API
+@app.get("/view/fileexplorer")
 def get_documents(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return fetch_all_documents(db)
 
 # ✅ User Registration Endpoint
 @app.post("/auth/register")
 async def register_user_endpoint(
-    username: str = Form(...),
     email: str = Form(...),
-    password: str = Form(...),
-    role: Literal["editor", "viewer", "admin"] = Form(...),
     db: Session = Depends(get_db)
 ):
-    return register_user(db, username, email, password, role)
+    return register_user(db, email)
 
+   
 # ✅ Verify OTP Endpoint
 @app.post("/auth/verify-otp")
 async def verify_otp_endpoint(
     email: str = Form(...),
     otp: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    role: Literal["editor", "viewer", "admin"] = Form(...),
     db: Session = Depends(get_db)
 ):
-    return verify_otp(db, email, otp)
+    return verify_otp(db, email, otp, username, password, role)
+
 
 # ✅ User Login Endpoint
 @app.post("/auth/login")
@@ -111,28 +115,44 @@ async def login_user_endpoint(
 ):
     return login_user(db, email, password)
 
-# ✅ Fetch User Logs Endpoint
-@app.get("/logs/user/{user_id}", response_model=List[ActivityLog])
-async def get_user_logs(user_id: int, db: Session = Depends(get_db)):
+
+
+# ✅ Add Log Endpoint (uses document_name now)
+@app.post("/logs/user/{user_id}")
+async def add_log(user_id: int, log: ActivityLog, db: Session = Depends(get_db)):
+    return add_log_to_db(db, user_id, log)
+
+# ✅ Fetch All Logs Endpoint (uses document_name now)
+@app.get("/logs/all")
+async def get_all_logs(db: Session = Depends(get_db)):
+    return {"logs": fetch_all_logs(db)}
+
+# ✅ Fetch Document Logs Endpoint
+@app.get("/logs/documents")
+async def get_document_logs(db: Session = Depends(get_db)):
     try:
-        logs = fetch_logs(db, user_id)
-        if not logs:
-            raise HTTPException(status_code=404, detail=f"No logs found for user ID {user_id}")
-        return logs
+        logs = document_logs(db)
+        return {"logs": logs}
     except HTTPException as e:
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
-# ✅ Add Log Endpoint
-@app.post("/logs/user/{user_id}")
-async def add_log(user_id: int, log: ActivityLog, db: Session = Depends(get_db)):
-    return add_log_to_db(db, user_id, log)
+# ✅ Fetch User Logs Endpoint
+@app.get("/logs/users")
+async def get_user_logs(db: Session = Depends(get_db)):
+    try:
+        logs = user_logs(db)
+        return {"logs": logs}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
-# ✅ Fetch All Logs Endpoint
-@app.get("/logs/all")
-async def get_all_logs(db: Session = Depends(get_db)):
-    return {"logs": fetch_all_logs(db)}
+
+
+
+
 
 # ✅ Add Comment Endpoint
 @app.post("/comments")
@@ -219,8 +239,33 @@ async def summarize_text_endpoint(file: UploadFile = File(...)):
     summary = summarize_text(text)
     return {"summary": summary}
 
+@app.put("/auth/change-role")
+async def change_role_endpoint(
+    email: str = Form(..., description="Email of the user whose role is to be changed"),
+    new_role: str = Form(..., description="New role to assign (admin, editor, viewer)"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    API endpoint to change the role of a user. Only accessible by admin users.
+
+    Args:
+        email (str): The email of the user whose role is to be changed.
+        new_role (str): The new role to assign to the user.
+        db (Session): SQLAlchemy database session.
+        current_user (dict): The current logged-in user's details.
+
+    Returns:
+        dict: A success message.
+    """
+    from utility.role_manager import change_user_role
+    return change_user_role(email, new_role, db, current_user)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # uvicorn app_fast_api:app --reload
+
+
+
